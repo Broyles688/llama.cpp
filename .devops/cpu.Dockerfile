@@ -1,9 +1,9 @@
 ARG UBUNTU_VERSION=22.04
 
+# Build stage
 FROM ubuntu:$UBUNTU_VERSION AS build
 
 ARG TARGETARCH
-
 ARG GGML_CPU_ARM_ARCH=armv8-a
 
 RUN apt-get update && \
@@ -34,11 +34,11 @@ RUN mkdir -p /app/full \
     && cp requirements.txt /app/full \
     && cp .devops/tools.sh /app/full/tools.sh
 
-## Base image
+# Base image (with numactl added)
 FROM ubuntu:$UBUNTU_VERSION AS base
 
 RUN apt-get update \
-    && apt-get install -y libgomp1 curl\
+    && apt-get install -y libgomp1 curl numactl \
     && apt autoremove -y \
     && apt clean -y \
     && rm -rf /tmp/* /var/tmp/* \
@@ -47,7 +47,7 @@ RUN apt-get update \
 
 COPY --from=build /app/lib/ /app
 
-### Full
+# Full stage (optional, for reference)
 FROM base AS full
 
 COPY --from=build /app/full /app
@@ -69,17 +69,17 @@ RUN apt-get update \
 
 ENTRYPOINT ["/app/tools.sh"]
 
-### Light, CLI only
+# Light stage (optional, for reference)
 FROM base AS light
 
 COPY --from=build /app/full/llama-cli /app
 
 WORKDIR /app
 
-ENTRYPOINT [ "/app/llama-cli" ]
+ENTRYPOINT ["/app/llama-cli"]
 
-### Server, Server only
-FROM base AS server
+# Server stage (now the default final stage)
+FROM base
 
 ENV LLAMA_ARG_HOST=0.0.0.0
 
@@ -87,6 +87,6 @@ COPY --from=build /app/full/llama-server /app
 
 WORKDIR /app
 
-HEALTHCHECK CMD [ "curl", "-f", "http://localhost:8080/health" ]
+HEALTHCHECK CMD ["curl", "-f", "http://localhost:8080/health"]
 
-ENTRYPOINT [ "/app/llama-server" ]
+ENTRYPOINT ["/app/llama-server"]
